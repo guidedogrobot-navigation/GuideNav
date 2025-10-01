@@ -1,0 +1,10 @@
+# NavigationDebug.msg
+std_msgs/Header header
+sensor_msgs/Image current_image
+int32 topo_index
+float64 x
+float64 y 
+float64 yaw
+float64 v
+float64 w
+int32 frame_id

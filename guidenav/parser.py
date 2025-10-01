@@ -1,0 +1,259 @@
+'''
+Argument parser for the guidenav node
+(navigate.py)
+'''
+
+import argparse
+from pathlib import Path
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=f"GuideNav node for topological image navigation"
+    )
+    parser.add_argument(
+        "--robot",
+        type=str,
+        help="robot name",
+        required=True,
+    )
+    parser.add_argument(
+        "--img-size",
+        "-i",
+        default=(85, 64),
+        type=int,
+        nargs=2,
+        help="image size (default: [85, 64])",
+    )
+    parser.add_argument(
+        "--topomap-dir",
+        "-d",
+        type=str,
+        help="name of the topomap directory",
+        required=True,
+    )
+    parser.add_argument(
+        "--img-dir",
+        "-img",
+        type=str,
+        help="path to offline data",
+        required=True,
+    )
+    parser.add_argument(
+        "--gt-csv-path",
+        "-gt",
+        type=str,
+        help="path to gt pose",
+        required=True,
+    )
+    # parser.add_argument(
+    #     "--wp-model",
+    #     default="gnm_large",
+    #     type=str,
+    #     help="waypoint model name (hint: check ../config/models.yaml) (default: large_gnm)",
+    #     required=True,
+    # )
+    parser.add_argument(
+        "--pr-model",
+        default="cosplace",
+        type=str,
+        help="place recognition model name (hint: check hloc extractors conf) (default: cosplace)",
+    )
+    parser.add_argument(
+        "--close-threshold",
+        "-t",
+        default=3,
+        type=int,
+        help="""temporal distance within the next node in the topomap before 
+        localizing to it (default: 3)""",
+    )
+    parser.add_argument(
+        "--window-radius",
+        "-r",
+        default=2,
+        type=int,
+        help="""temporal number of topomap nodes to look at in the topopmap for
+        localization when using sliding window filter (default: 2)""",
+    )
+    parser.add_argument(
+        "--target-waypoint-idx",
+        "-w",
+        default=2, # close waypoints exihibit straight line motion (the middle waypoint is a good default)
+        type=int,
+        help=f"""index of the waypoint used for navigation (between 0 and 4 or 
+        how many waypoints your model predicts) (default: 2)""",
+    )
+    parser.add_argument(
+        "--goal-node-idx",
+        "-g",
+        default=-1,
+        type=int,
+        help="""goal node index in the topomap (if -1, then the goal node is 
+        the last node in the topomap) (default: -1)""",
+    )
+    parser.add_argument(
+        "--start-node-idx",
+        "-s",
+        default=0,
+        type=int,
+        help="""start node index in the topomap (if 0, then the start node is 
+        the first node in the topomap) (default: 0)""",
+    )
+    parser.add_argument(
+        "--filter-mode",
+        default="bayesian", # "sliding_window",
+        type=str,
+        help="""Filter mode for choosing the subgoal (sliding_window: GNM default or
+         topological_filter: from https://arxiv.org/pdf/2105.03091.pdf) (default: sliding_window)""",
+    )
+    parser.add_argument(
+        "--subgoal-mode",
+        default='place_recognition',
+        type=str,
+        help="""If the subgoal should be chosen using GNM image temporal distance prediction
+         or place recognition (place_recognition | temporal_distance) (default: place_recognition)"""
+    )
+    parser.add_argument( # how much to look ahead (add) to VPR match
+        "--lookahead",
+        default=1,
+        type=int,
+        help="""Number of nodes ahead from current node to consider for subgoal
+            when choosing subgoals with place recognition (default: 1)""",
+    )
+    parser.add_argument(
+        "--recompute-place-recognition-db",
+        action="store_true",
+        default=False
+    )
+    parser.add_argument(
+        "--device",
+        default="cuda",
+        type=str,
+        help="Device to use for inference (cuda | cpu) (default: cuda)",
+    )
+
+    # Bayesian filter params
+    parser.add_argument(
+        "--transition-model-window-lower",
+        default=-1,
+        type=int,
+        help="""Lower window of the transition model (default: -1)""",
+    )
+    parser.add_argument(
+        "--transition-model-window-upper",
+        default=2,
+        type=int,
+        help="""Upper window of the transition model (default: 2)""",
+    )
+    parser.add_argument(
+        "--filter-delta",
+        default=10,
+        type=int,
+        help="""Filter delta (default: 10)""",
+    )
+
+    # Config file paths
+    parser.add_argument(
+        "--robot-config-path",
+        type=Path,
+        help="path to config of the robot to control",
+        required=True,
+    )
+    parser.add_argument(
+        "--model-config-path",
+        type=Path,
+        help="path to config of the models",
+        required=True,
+    )
+    parser.add_argument(
+        "--topomap-base-dir",
+        type=Path,
+        help="path to topomap directory",
+        required=True,
+    )
+    parser.add_argument(
+        "--vis-dir",
+        # default = "/media/2t/ijrr/experiment_viz",
+        default = "/home/orin2/Repository/GuideNav/src/experiment_viz",
+        type=Path,
+        help="path to topomap directory",
+    )
+    parser.add_argument(
+        "--model-weight-dir",
+        type=Path,
+        help="path to model weights directory",
+        required=True,
+    )
+
+    # Feature matching
+    parser.add_argument(
+        "--feature-matching",
+        default= "reloc3r", # "mast3r", # "liftfeat", #"mast3r", # "mast3r",  
+        # default= "navdp", # "mast3r", # "liftfeat", #"mast3r", # "mast3r",  
+        type=str,
+        help="feature matching method to use (loftr | roma | mast3r | liftfeat)",
+    )
+
+    # debugging
+    parser.add_argument(
+        "--enable-debug",
+        action='store_true',
+        help="Enable debug mode (default: True)",
+    )
+
+    parser.add_argument(
+        "--offline-images",
+        action='store_true',
+        help="offline image input (default: True)",
+    )
+
+    parser.add_argument(
+        "--offline-fps",
+        type=int,
+        default=30,
+        help="offline image input fps (default: True)",
+    )
+
+    parser.add_argument(
+        "--navdp-enabled",
+        action='store_true',
+        help="offline image input fps (default: True)",
+    )
+
+    parser.add_argument('--use_odom', default=False, action='store_true',
+                    help="Enable to use /visual_slam/tracking/odometry")
+
+
+    args, _ = parser.parse_known_args()
+    return args
+
+
+
+# def parse_topo_args():
+#     parser = argparse.ArgumentParser(
+#         description=f"Just for debugging purpose"
+#     )
+#     parser.add_argument(
+#         "--topomap-dir",
+#         "-d",
+#         type=str,
+#         help="name of the topomap directory",
+#         required=True,
+#     )
+#     parser.add_argument(
+#         "--topomap-base-dir",
+#         type=Path,
+#         help="path to topomap directory",
+#         required=True,
+#     )
+#     parser.add_argument(
+#         "--img-size",
+#         "-i",
+#         default=(85, 64),
+#         type=int,
+#         nargs=2,
+#         help="image size (default: [85, 64])",
+#     )
+#     args, _ = parser.parse_known_args()
+#     return args
+
+
