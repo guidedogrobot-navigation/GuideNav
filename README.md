@@ -115,3 +115,11 @@ GuideNav/
 │   └── vision/         # Perception methods
 └── data/              # Navigation data
 ```
+
+
+## Acknowledgment
+We would like to express our gratitude to the authors and contributors of the following repositories:
+
+- [PlaceNav](https://github.com/lasuomela/PlaceNav)
+- [visualnav-transformer](https://github.com/robodhruv/visualnav-transformer)
+- [CosPlace](https://github.com/gmberton/CosPlace)
