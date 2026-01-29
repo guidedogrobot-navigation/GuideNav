@@ -1,11 +1,12 @@
 # GuideNav: Visual Teach-and-Repeat Navigation using Topological Mapping
 
-<p align="center">
-  <a href="assets/teaser.mp4">
-    <img src="assets/teaser_thumbnail.png" alt="GuideNav Demo" width="800">
-  </a>
-</p>
-
+  <div align="center">                                   
+    <video src="https://github.com/user-attachments/asset
+  s/057ec63f-41ca-4d35-89ea-f578838eb2ae" width="800"    
+  controls autoplay muted loop>                          
+    </video>                                             
+  </div> 
+  
 <!-- To embed video: drag-drop teaser.mp4 into GitHub issue/PR, then paste the generated link here -->
 
 <p align="center">
