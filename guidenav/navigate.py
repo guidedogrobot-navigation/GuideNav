@@ -6,7 +6,6 @@ import copy
 import argparse
 import parser
 import glob
-import pdb
 
 import cv2
 import numpy as np
@@ -14,7 +13,6 @@ import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
 
-from tqdm.auto import tqdm
 from pathlib import Path
 
 import torch
@@ -47,15 +45,9 @@ from sensor_msgs.msg import CompressedImage
 from utils import to_numpy, read_image, read_depth_image, get_image_transform
 matplotlib.use('Agg')  # Use non-interactive backend
 
-# tactile stop
-from std_msgs.msg import Bool
-
 # smooth behavior
 from collections import deque
 
-# navdp
-import requests
-import json
 
 class FakeRGBDSubscriber(Node):
     def __init__(self, guidenav_node, image_directory, use_odometry=False, fps=30):
@@ -67,7 +59,6 @@ class FakeRGBDSubscriber(Node):
         self.fps = fps
         self.frame_interval = 1.0 / fps
         
-        # Load image paths
         self.rgb_paths = []
         self.depth_paths = []
         self._load_image_paths()
@@ -80,7 +71,6 @@ class FakeRGBDSubscriber(Node):
     
     def _load_image_paths(self):
         """Load RGB and depth image paths from directory"""
-        # Option 1: Separate rgb/ and depth/ subdirectories
         rgb_dir = os.path.join(self.image_directory, 'color')
         depth_dir = os.path.join(self.image_directory, 'depth')
         
@@ -145,15 +135,13 @@ class FakeRGBDSubscriber(Node):
             if rgb_image is not None or depth_image is not None:
                 if self.use_odometry:
                     # For odometry mode, create a fake odometry message or pass None
-                    fake_odom = None  # You can create a proper Odometry message here if needed
+                    fake_odom = None 
                     self.guidenav_node.process_stream_image(rgb_image, depth_image, fake_odom)
                 else:
                     self.guidenav_node.process_stream_image(rgb_image, depth_image, None)
             
-            # Advance to next image
             self.current_index += 1
             
-            # Handle looping or stopping
             max_images = max(len(self.rgb_paths), len(self.depth_paths)) if (self.rgb_paths or self.depth_paths) else 0
             if self.current_index >= max_images:
                 if self.loop:
@@ -233,18 +221,6 @@ class GuideNavNode:
         else:
             print("Using CPU")
             self.device = torch.device("cpu")
-
-        # Tactile segmentation related
-        self.stop_tactile = False
-        self.tactile_signal_count = 0
-        self.last_tactile_time = None
-        self.tactile_stop_duration = 0.0
-        self.tactile_lock = threading.Lock()
-
-
-        # NavDP
-        self.navdp_enabled = args.navdp_enabled
-        print(f"navdp enabled: {self.navdp_enabled}")
 
         # Get the image preprocessing transform for the neural network models
         self._image_transform = get_image_transform(args.img_size)
@@ -327,10 +303,6 @@ class GuideNavNode:
         elif self.fm_method == 'reloc3r':
             self.fm_model, self.img_reso = feature_match.init_reloc3r()
 
-        elif self.fm_method == 'navdp':
-            self.init_navdp(args)
-            
-
         # Initialize place recognition
         if args.subgoal_mode == 'place_recognition':
             self._setup_place_recognition(
@@ -350,16 +322,7 @@ class GuideNavNode:
         # Create ROS2 node and publisher
         self.ros_node = rclpy.create_node('guidenav_vel_pub')
         self.cmd_vel_pub = self.ros_node.create_publisher(Twist, '/cmd_vel', 10)
-        self.tactile_sub = self.ros_node.create_subscription(
-            Bool, 
-            '/tactile_stop_signal', 
-            self.stop_tactile_callback, 
-            10  # QoS depth - can handle high frequency
-        )
-        self.tactile_stats_timer = self.ros_node.create_timer(5.0, self.print_tactile_stats)
 
-
-        
         self.enable_debug = getattr(args, 'enable_debug', True)
 
         if self.enable_debug:
@@ -396,240 +359,19 @@ class GuideNavNode:
         # Add thread lock for thread safety
         self.processing_lock = threading.Lock()
 
-    # def publish_cmd_vel(self, v: float, w: float):
-    #     twist = Twist()
-    #     twist.linear.x = v
-    #     twist.angular.z = w
-    #     self.cmd_vel_pub.publish(twist)
-    #     self.ros_node.get_logger().info(f"Sent cmd_vel: v={v:.2f}, w={w:.2f}")
-
-    def init_navdp(self, args):
-        """Initialize NavDP connection"""
-        
-        self.navdp_port = getattr(args, 'navdp_port', 8000)
-        self.navdp_url = f"http://localhost:{self.navdp_port}"
-        
-        print(f"[NavDP] Initializing connection to {self.navdp_url}")
-        
-        # Test connection and reset
-        if self.navdp_reset(self.K):
-            print("[NavDP] Successfully initialized")
-        else:
-            print("[NavDP] Failed to initialize - will use fallback navigation")
-
-    def navdp_reset(self, intrinsic):
-        """Reset NavDP system"""
-        try:
-            url = f"{self.navdp_url}/navdp_reset"
-            response = requests.post(url, json={
-                'intrinsic': intrinsic.tolist(),
-                'stop_threshold': -4.0,
-                'batch_size': 1
-            })
-            print("[NavDP] Reset successful")
-            return response.status_code == 200
-        except Exception as e:
-            print(f"[NavDP] Reset failed: {e}")
-            return False
-    
-    def navdp_get_trajectory_point_goal(self, rgb_img, depth_img, goal_x, goal_y):
-        """Get NavDP trajectory with point goal"""
-        try:
-            url = f"{self.navdp_url}/navdp_step_xy"
-            
-            # Prepare images
-            _, rgb_encoded = cv2.imencode('.jpg', rgb_img)
-            depth_scaled = np.clip(depth_img * 10000.0, 0, 65535.0).astype(np.uint16)
-            _, depth_encoded = cv2.imencode('.png', depth_scaled)
-            
-            files = {
-                'image': ('image.jpg', rgb_encoded.tobytes(), 'image/jpeg'),
-                'depth': ('depth.png', depth_encoded.tobytes(), 'image/png'),
-            }
-            data = {
-                'goal_data': json.dumps({
-                    'goal_x': [goal_x],
-                    'goal_y': [goal_y]
-                })
-            }
-            
-            response = requests.post(url, files=files, data=data)
-            if response.status_code == 200:
-                result = json.loads(response.text)
-                return np.array(result['trajectory']), np.array(result['all_values'])
-            else:
-                print(f"[NavDP] API call failed with status {response.status_code}")
-                return None, None
-                
-        except Exception as e:
-            print(f"[NavDP] Trajectory request failed: {e}")
-            return None, None
-
-    def navdp_no_goal_step(self, rgb_img, depth_img):
-        """Get NavDP trajectory in exploration mode (no specific goal)"""
-        try:
-            url = f"{self.navdp_url}/navdp_step_nogoal"
-            
-            # Prepare images
-            _, rgb_encoded = cv2.imencode('.jpg', rgb_img)
-            depth_scaled = np.clip(depth_img * 10000.0, 0, 65535.0).astype(np.uint16)
-            _, depth_encoded = cv2.imencode('.png', depth_scaled)
-            
-            files = {
-                'image': ('image.jpg', rgb_encoded.tobytes(), 'image/jpeg'),
-                'depth': ('depth.png', depth_encoded.tobytes(), 'image/png'),
-            }
-            data = {
-                'goal_data': json.dumps({
-                    'goal_x': [0.0],  # Dummy values for no-goal mode
-                    'goal_y': [0.0]
-                })
-            }
-            
-            response = requests.post(url, files=files, data=data)
-            if response.status_code == 200:
-                result = json.loads(response.text)
-                return np.array(result['trajectory']), np.array(result['all_values'])
-            else:
-                print(f"[NavDP] No-goal API call failed with status {response.status_code}")
-                return None, None
-                
-        except Exception as e:
-            print(f"[NavDP] No-goal request failed: {e}")
-            return None, None
-
-    def trajectory_to_velocity(self, trajectory, dt=0.1):
-        """Convert NavDP trajectory to velocity commands"""
-        if trajectory is None or len(trajectory) == 0:
-            return 0.0, 0.0
-        
-        # Use the first action in the trajectory
-        if len(trajectory[0]) > 0:
-            next_action = trajectory[0][1] if len(trajectory[0]) > 1 else trajectory[0][0]
-            
-            # NavDP outputs relative pose changes (Δx, Δy, Δω)
-            dx, dy = next_action[0], next_action[1]
-            
-            # Convert to velocity commands
-            v = np.sqrt(dx**2 + dy**2) / dt  # Linear velocity
-            w = np.arctan2(dy, dx) / dt       # Angular velocity approximation
-            
-            # Clamp to robot limits
-            v = np.clip(v, 0, self.robot_config['max_v'])
-            w = np.clip(w, -self.robot_config['max_w'], self.robot_config['max_w'])
-            
-            return v, w
-        
-        return 0.0, 0.0
-
-    def subgoal_to_approximate_goal(self, subgoal_idx):
-        """Convert subgoal index to approximate spatial goal"""
-        steps_ahead = max(subgoal_idx - self.closest_node_idx, 1)
-        
-        # Estimate distance based on steps ahead
-        if steps_ahead <= 1:
-            return 2.0, 0.0  # Close target
-        elif steps_ahead <= 3:
-            return 5.0, 0.0  # Medium distance
-        else:
-            return 8.0, 0.0  # Far target
-
     def publish_cmd_vel(self, v: float, w: float):
-        """Publish velocity commands with tactile safety check"""
-        with self.tactile_lock:
-            tactile_blocked = self.stop_tactile
-        
-        if tactile_blocked:
-            # Override commands with stop if tactile sensor triggered
-            v, w = 0.0, 0.0
-            self.ros_node.get_logger().info("TACTILE OVERRIDE: Stopping robot!")
-        
+        """Publish velocity commands"""
         twist = Twist()
         twist.linear.x = v
         twist.angular.z = w
         self.cmd_vel_pub.publish(twist)
-        
-        # Log with tactile status
-        status = "[TACTILE BLOCKED]" if tactile_blocked else "[NORMAL]"
-        self.ros_node.get_logger().info(f"{status} cmd_vel: v={v:.2f}, w={w:.2f}")
-
-    def stop_tactile_callback(self, msg):
-        """Enhanced tactile stop callback with statistics tracking"""
-        current_time = time.time()
-        
-        with self.tactile_lock:
-            # Track signal changes
-            state_changed = self.stop_tactile != msg.data
-            self.stop_tactile = msg.data
-            
-            # Update statistics
-            self.tactile_signal_count += 1
-            self.last_tactile_time = current_time
-            
-            # Log state changes with more detail
-            if state_changed:
-                if self.stop_tactile:
-                    # self.ros_node.get_logger().warn("🛑 TACTILE STOP ACTIVATED - Navigation will be blocked!")
-                    self.ros_node.get_logger().warn("🛑 TACTILE STOP ACTIVATED - Robot will stop but navigation continues processing")
-
-                    # Immediately stop the robot
-                    self.publish_cmd_vel(0.0, 0.0)
-                else:
-                    # self.ros_node.get_logger().info("✅ Tactile clear - Navigation can resume")
-                    self.ros_node.get_logger().info("✅ TACTILE CLEAR - Navigation will resume automatically!")
-
-        
-        # Optional: Log high-frequency signals occasionally
-        if self.tactile_signal_count % 100 == 0:  # Every 100 signals (2 seconds at 50Hz)
-            with self.tactile_lock:
-                state_str = "STOP" if self.stop_tactile else "GO" 
-            self.ros_node.get_logger().info(f"Tactile signals received: {self.tactile_signal_count}, Current: {state_str}")
-
-    def print_tactile_stats(self):
-        """Print tactile sensor statistics"""
-        current_time = time.time()
-        
-        with self.tactile_lock:
-            if self.last_tactile_time is None:
-                self.ros_node.get_logger().warn("⚠️  No tactile signals received!")
-                return
-            
-            time_since_last = current_time - self.last_tactile_time
-            state_str = "🛑 STOP" if self.stop_tactile else "✅ GO"
-            
-            # Calculate approximate rate
-            if hasattr(self, 'tactile_stats_start_time'):
-                elapsed = current_time - self.tactile_stats_start_time
-                rate = self.tactile_signal_count / elapsed if elapsed > 0 else 0
-            else:
-                self.tactile_stats_start_time = current_time
-                rate = 0
-            
-            self.ros_node.get_logger().info(
-                f"Tactile Stats - Signals: {self.tactile_signal_count}, "
-                f"Rate: {rate:.1f} Hz, State: {state_str}, "
-                f"Last signal: {time_since_last:.1f}s ago"
-            )
-            
-            # Warn if no recent signals (potential connection issue)
-            if time_since_last > 1.0:  # No signal for 1 second
-                self.ros_node.get_logger().warn(f"⚠️  No tactile signals for {time_since_last:.1f}s - Check connection!")
-
-
 
     def process_stream_image(self, rgb_img, depth_img, odom_msg):
         """Process incoming RealSense images in real-time"""
         with self.processing_lock:
-            with self.tactile_lock:
-                tactile_stopped = self.stop_tactile
             # Check if navigation is complete
             if self.reached_goal or not self.navigation_active:
                 return
-
-            # if tactile_stopped:
-            #     # Still process for debugging/monitoring, but don't send commands
-            #     self.ros_node.get_logger().info("Tactile active - skipping navigation commands")
-            #     return
 
             # RGB image transform
             current_obs = self._image_transform(rgb_img).unsqueeze(0).to(self.device)
@@ -679,47 +421,6 @@ class GuideNavNode:
         return x_smooth, y_smooth, yaw_smooth
 
 
-    def smooth_commands(self, v, w):
-        """Apply smoothing and rate limiting to velocity commands"""
-        if not self.use_smoothing:
-            return v, w
-            
-        current_time = time.time()
-        dt = current_time - self.last_cmd_time
-        self.last_cmd_time = current_time
-        
-        current_cmd = np.array([v, w])
-        self.cmd_history.append(current_cmd)
-        
-        if self.last_smooth_cmd is None:
-            self.last_smooth_cmd = current_cmd.copy()
-            return v, w
-        
-        # Exponential smoothing
-        smoothed_cmd = (self.cmd_alpha * current_cmd + 
-                       (1 - self.cmd_alpha) * self.last_smooth_cmd)
-        
-        # Rate limiting to prevent jerky motion
-        if dt > 0 and dt < 1.0:  # Reasonable dt range
-            max_change = np.array([self.max_linear_change * dt, 
-                                 self.max_angular_change * dt])
-            
-            cmd_diff = smoothed_cmd - self.last_smooth_cmd
-            cmd_diff = np.clip(cmd_diff, -max_change, max_change)
-            final_cmd = self.last_smooth_cmd + cmd_diff
-        else:
-            final_cmd = smoothed_cmd
-        
-        # Optional: Moving average for additional smoothing
-        if len(self.cmd_history) >= 3:
-            recent_cmds = list(self.cmd_history)[-3:]
-            avg_cmd = np.mean(recent_cmds, axis=0)
-            # Blend with rate-limited command
-            final_cmd = 0.8 * final_cmd + 0.2 * avg_cmd
-        
-        self.last_smooth_cmd = final_cmd.copy()
-        return final_cmd[0], final_cmd[1]
-
     def navigate_one_step(self, rgb_img, depth_img, current_obs, odom_msg):
         """Execute one navigation step using NavDP + Place Recognition"""
         try:
@@ -751,14 +452,9 @@ class GuideNavNode:
             print(f"Frame {self.frame_counter}: Closest node: {self.closest_node_idx}, "
                 f"Subgoal: {subgoal_idx}, Goal: {self.goal_node_idx}")
 
-            # ===== NEW: Use NavDP for navigation =====
-            if self.fm_method == 'navdp' and self.navdp_enabled:
-                v, w = self.navigate_with_navdp(rgb_img, depth_img, subgoal_idx)
-            else:
-                # Fallback to your existing method
-                x,y,yaw, v, w = self.navigate_with_traditional_method(rgb_img, depth_img, subgoal_idx)
-            
-            
+            # Feature matching and control
+            x, y, yaw, v, w = self.navigate_with_feature_matching(rgb_img, depth_img, subgoal_idx)
+
             # Publish commands
             self.publish_cmd_vel(v, w)
             
@@ -791,50 +487,16 @@ class GuideNavNode:
                 compressed_msg.data = img_encoded.tobytes()
                 
                 nav_msg = Float64MultiArray()
-                
-                if self.navdp_enabled:
-                    nav_msg.data = [float(self.frame_counter), float(subgoal_idx), 
-                                0.0, 0.0, 0.0, float(v), float(w)]  # No pose data for NavDP
-                else:
-                    nav_msg.data = [float(self.frame_counter), float(subgoal_idx), 
-                                float(x), float(y), float(yaw), float(v), float(w)]
-                
+                nav_msg.data = [float(self.frame_counter), float(subgoal_idx),
+                            float(x), float(y), float(yaw), float(v), float(w)]
+
                 self.debug_image_pub.publish(compressed_msg)
                 self.debug_nav_pub.publish(nav_msg)
             except Exception as e:
                 print(f"[DEBUG] Publish failed: {e}")
 
-    def navigate_with_navdp(self, rgb_img, depth_img, subgoal_idx):
-        """Use NavDP for robust navigation"""
-        
-        # Strategy 1: Try with approximate goal based on subgoal distance
-        steps_ahead = subgoal_idx - self.closest_node_idx
-        
-        if steps_ahead <= 1:
-            # Very close to subgoal - use exploration mode (most robust)
-            print("[NavDP] Close to subgoal - using exploration mode")
-            trajectory, values = self.navdp_no_goal_step(rgb_img, depth_img)
-            
-            if trajectory is not None:
-                v, w = self.trajectory_to_velocity(trajectory)
-                print(f"[NavDP] Exploration: v={v:.3f}, w={w:.3f}")
-                return v, w
-        
-        else:
-            # Use point goal based on subgoal distance
-            goal_x, goal_y = self.subgoal_to_approximate_goal(subgoal_idx)
-            print(f"[NavDP] Using point goal: ({goal_x:.1f}, {goal_y:.1f})")
-            
-            trajectory, values = self.navdp_get_trajectory_point_goal(rgb_img, depth_img, goal_x, goal_y)
-            
-            if trajectory is not None:
-                v, w = self.trajectory_to_velocity(trajectory)
-                print(f"[NavDP] Point goal: v={v:.3f}, w={w:.3f}")
-                return v, w
-        
-
-    def navigate_with_traditional_method(self, rgb_img, depth_img, subgoal_idx):
-        """Fallback to your existing navigation method"""
+    def navigate_with_feature_matching(self, rgb_img, depth_img, subgoal_idx):
+        """Navigate using feature matching for relative pose estimation"""
         
         sg_img = self.topomap_images[subgoal_idx]
         
@@ -848,26 +510,26 @@ class GuideNavNode:
                 # Handle negative x (behind robot)
                 while x < 0:
                     subgoal_idx = subgoal_idx + 1
-                    print(f"[Traditional] subgoal from {subgoal_idx-1} to {subgoal_idx} due to negative x")
+                    print(f"Subgoal from {subgoal_idx-1} to {subgoal_idx} due to negative x")
                     if subgoal_idx >= len(self.topomap_images):
                         print(f"[WARNING] Subgoal index {subgoal_idx} exceeds topomap length. Stopping.")
-                        return 0.0, 0.0
+                        return 0.0, 0.0, 0.0, 0.0, 0.0
                     
                     sg_img = self.topomap_images[subgoal_idx]
                     x, y, yaw = feature_match.matching_features_reloc3r_inv(
                         rgb_img, sg_img, self.fm_model, self.img_reso)
 
                 if x is None or y is None or yaw is None:
-                    print(f"[WARNING] Traditional method failed for frame {self.frame_counter}")
+                    print(f"[WARNING] Pose estimation failed for frame {self.frame_counter}")
                     self.unvalidPnpCount += 1
-                    return 0.0, 0.0
+                    return 0.0, 0.0, 0.0, 0.0, 0.0
 
                 # Generate control commands
                 v, w = control.vtr_controller(x, y, yaw, 
                                             self.robot_config['max_v'], 
                                             self.robot_config['max_w'])
                 
-                print(f"[Traditional] v={v:.3f}, w={w:.3f}, pose=({x:.2f},{y:.2f},{yaw:.1f})")
+                print(f"Control: v={v:.3f}, w={w:.3f}, pose=({x:.2f},{y:.2f},{yaw:.1f})")
                 return x,y,yaw, v, w
                 
             else:
@@ -876,9 +538,9 @@ class GuideNavNode:
                 x, y, yaw = se2_estimate.pnpRansac(kp1, kp2, matches, depth_img, self.K)
                 
                 if x is None or y is None or yaw is None:
-                    print(f"[WARNING] Traditional PnP failed for frame {self.frame_counter}")
+                    print(f"[WARNING] PnP failed for frame {self.frame_counter}")
                     self.unvalidPnpCount += 1
-                    return 0.0, 0.0
+                    return 0.0, 0.0, 0.0, 0.0, 0.0
 
                 v, w = control.vtr_controller(x, y, yaw, 
                                             self.robot_config['max_v'], 
@@ -886,8 +548,8 @@ class GuideNavNode:
                 return x,y,yaw,v, w
                 
         except Exception as e:
-            print(f"[ERROR] Traditional method failed: {e}")
-            return 0.0, 0.0
+            print(f"[ERROR] Feature matching failed: {e}")
+            return 0.0, 0.0, 0.0, 0.0, 0.0
 
     def do_feature_matching(self, rgb_img, sg_img):
         """Helper function for feature matching"""
@@ -902,203 +564,12 @@ class GuideNavNode:
         else:
             raise ValueError(f"Feature matching method {self.fm_method} not supported")
 
-    # def navigate_one_step(self, rgb_img, depth_img, current_obs, odom_msg):
-    #     """Execute one navigation step with current sensor data"""
-    #     try:
-    #         start_time = time.time()
-            
-
-    #         # TODO: current_obs for VPR vs. rgb_img for matching
-    #         context = copy.deepcopy(self.context_queue)
-    #         current_obs = context[-1]['img'].to(self.device)
-            
-    #         # Cat the context images along the channel dimension
-    #         context = torch.cat([obs['img'] for obs in context], dim=1).to(self.device)
-    #         # pdb.set_trace()
-
-    #         # Initialize Bayesian filter on first pass
-    #         if (self.first_pass and self.filter_mode == 'bayesian'):
-    #             self.place_recognition_querier.initialize_model(current_obs)
-    #             self.first_pass = False
-                
-    #         # Place recognition
-    #         if self.filter_mode == 'bayesian':
-    #             self.closest_node_idx, _score = self.place_recognition_querier.match(current_obs)
-    #         elif self.filter_mode == 'sliding_window':
-    #             start = max(self.closest_node_idx - self.window_radius, 0)
-    #             end = min(self.closest_node_idx + self.window_radius + 1, self.goal_node_idx + 1)
-    #             self.closest_node_idx = self.place_recognition_querier.match(current_obs, start, end)
-    #         else:
-    #             raise ValueError(f"Filter mode {self.filter_mode} not recognized")
-            
-    #         # Determine subgoal
-    #         subgoal_idx = min(self.closest_node_idx + self.lookahead, self.goal_node_idx)
-    #         sg_img = self.topomap_images[subgoal_idx]
-
-    #         # Save sg_image for visualization
-    #         # imwrite_path = os.path.join("/home/orin2/Repository/GuideNav/src/guidenav/tool", f'subgoal_{subgoal_idx}.jpg')
-    #         # cv2.imwrite(imwrite_path, sg_img)
-    #         # pdb.set_trace()
-
-    #         print(f"Frame {self.frame_counter}: Closest node: {self.closest_node_idx}, "
-    #               f"Subgoal: {subgoal_idx}, Goal: {self.goal_node_idx}")
-
-    #         # Feature matching
-    #         if self.fm_method == 'loftr':
-    #             kp1, kp2, matches = feature_match.matching_features_loftr(
-    #                 rgb_img, sg_img, self.fm_model)
-    #         elif self.fm_method == 'roma':
-    #             # Note: Roma might need image paths - you may need to save temp images
-    #             kp1, kp2, matches = feature_match.matching_features_roma(
-    #                 rgb_img, sg_img, self.fm_model)
-    #         elif self.fm_method == 'mast3r':
-    #             kp1, kp2, matches = feature_match.matching_features_mast3r(
-    #                 rgb_img, sg_img, self.fm_model)
-    #         elif self.fm_method == 'liftfeat':
-    #             kp1, kp2, matches = feature_match.matching_features_liftFeat(
-    #                 rgb_img, sg_img, self.fm_model)
-    #         elif self.fm_method == 'reloc3r':
-    #             x,y,yaw= feature_match.matching_features_reloc3r_inv(
-    #                 rgb_img, sg_img, self.fm_model, self.img_reso)
-
-    #             x, y, yaw = self.smooth_pose(x,y,yaw)
-                
-    #             while x < 0:
-    #                 subgoal_idx = subgoal_idx +1
-    #                 print(f"[IN LOOP] subgoal from {subgoal_idx-1} to {subgoal_idx} due to negative x")
-    #                 if subgoal_idx >= len(self.topomap_images):
-    #                     print(f"[WARNING] Subgoal index {subgoal_idx} exceeds topomap image length. Stopping navigation.")
-    #                     return
-    #                 # Get the new subgoal image
-    #                 sg_img = self.topomap_images[subgoal_idx]
-    #                 x,y,yaw= feature_match.matching_features_reloc3r_inv(
-    #                     rgb_img, sg_img, self.fm_model, self.img_reso)
-
-    #             # REMOVE
-    #             # if x < 0:
-    #             #     subgoal_idx += 1
-    #             #     sg_img = self.topomap_images[subgoal_idx]
-    #             #     x,y,yaw= feature_match.matching_features_reloc3r_inv(
-    #             #         rgb_img, sg_img, self.fm_model, self.img_reso)
-    #         else:
-    #             raise ValueError(f"Feature matching method {self.fm_method} not recognized")
-
-    #         # pdb.set_trace()
-            
-    #         # Pose estimation
-    #         try:
-    #             if self.fm_method == 'reloc3r':
-    #                 # x,y ,yaw = pose2to1[0, 3], pose2to1[1, 3], np.arctan2(pose2to1[1, 0], pose2to1[0, 0])
-    #                 if x is None or y is None or yaw is None:
-    #                     print(f"[WARNING] Failed to estimate pose for frame {self.frame_counter}")
-    #                     self.unvalidPnpCount += 1
-    #                     return
-
-    #                 # Generate control commands
-    #                 v, w = control.vtr_controller(x, y, yaw, 
-    #                                             self.robot_config['max_v'], 
-    #                                             self.robot_config['max_w'])
-                    
-    #                 # Publish velocity command
-    #                 self.publish_cmd_vel(v, w)
-                    
-    #                 # print(f"Control Command: v={v:.3f} m/s, w={w:.3f} rad/s")
-    #                 # print(f"Relative pose: x={x:.2f}m, y={y:.2f}m, yaw={yaw:.2f}deg")
-
-    #                 # Save visualization (optional - can be disabled for performance)
-    #                 # TODO: Need new plot saving 
-    #                 # if hasattr(self, 'save_visualizations') and self.save_visualizations:
-    #                 #     self.visualize_and_save_results_no_matching(
-    #                 #         rgb_img, self.frame_counter, None, None,
-    #                 #         sg_img, subgoal_idx, x, y, yaw, v, w,
-    #                 #         self.vis_dir
-    #                 #     )
-    #             else:
-    #                 x, y, yaw = se2_estimate.pnpRansac(kp1, kp2, matches, depth_img, self.K)
-                
-    #                 if x is None or y is None or yaw is None:
-    #                     print(f"[WARNING] Failed to estimate pose for frame {self.frame_counter}")
-    #                     self.unvalidPnpCount += 1
-    #                     return
-
-    #                 # Generate control commands
-    #                 v, w = control.vtr_controller(x, y, yaw, 
-    #                                             self.robot_config['max_v'], 
-    #                                             self.robot_config['max_w'])
-                    
-    #                 # Publish velocity command
-    #                 self.publish_cmd_vel(v, w)
-                    
-    #                 print(f"Control Command: v={v:.3f} m/s, w={w:.3f} rad/s")
-    #                 print(f"Relative pose: x={x:.2f}m, y={y:.2f}m, yaw={yaw:.2f}deg")
-
-    #                 # Save visualization (optional - can be disabled for performance)
-    #                 # if hasattr(self, 'save_visualizations') and self.save_visualizations:
-    #                 #     self.visualize_and_save_results(
-    #                 #         rgb_img, self.frame_counter, None, depth_img,
-    #                 #         sg_img, subgoal_idx, x, y, yaw, v, w,
-    #                 #         kp1, kp2, matches, self.unvalidPnpCount, self.vis_dir
-    #                 #     )
-
-    #             # Check if goal is reached
-    #             self.reached_goal = (self.closest_node_idx >= self.goal_node_idx)
-                
-    #             if self.reached_goal:
-    #                 print("Goal reached! Stopping navigation.")
-    #                 self.publish_cmd_vel(0.0, 0.0)  # Stop the robot
-    #                 self.navigation_active = False
-
-    #         except Exception as e:
-    #             print(f"[ERROR] Pose estimation failed: {e}")
-    #             self.unvalidPnpCount += 1
-    #             return
-
-    #         # Update frame counter
-    #         self.frame_counter += 1
-            
-    #         # Print timing info
-    #         loop_duration = time.time() - start_time
-    #         print(f"Processing time: {loop_duration:.3f}s")
-
-    #     except Exception as e:
-    #         print(f"[ERROR] Navigation step failed: {e}")
-    #         # Send stop command on error
-    #         self.publish_cmd_vel(0.0, 0.0)
-
-    #     if self.enable_debug:
-    #         try:
-    #             # Method 1: Manual compression (more control)
-    #             _, img_encoded = cv2.imencode('.jpg', rgb_img, 
-    #                                         [cv2.IMWRITE_JPEG_QUALITY, 70])
-                
-    #             compressed_msg = CompressedImage()
-    #             compressed_msg.header.stamp = self.ros_node.get_clock().now().to_msg()
-    #             compressed_msg.header.frame_id = "camera_frame"
-    #             compressed_msg.format = "jpeg"
-    #             compressed_msg.data = img_encoded.tobytes()
-                
-    #             # Navigation data
-    #             nav_msg = Float64MultiArray()
-    #             nav_msg.data = [float(self.frame_counter), float(subgoal_idx), 
-    #                         float(x), float(y), float(yaw), float(v), float(w)]
-                
-    #             # Publish
-    #             self.debug_image_pub.publish(compressed_msg)
-    #             self.debug_nav_pub.publish(nav_msg)
-                
-    #             print(f"[DEBUG] Published frame {self.frame_counter}")
-                
-    #         except Exception as e:
-    #             print(f"[DEBUG] Publish failed: {e}")
     def start_navigation(self):
         """Start the navigation process"""
         print("[INFO] Starting real-time navigation...")
         self.navigation_active = True
         self.reached_goal = False
         self.frame_counter = 0
-        with self.tactile_lock:
-            self.tactile_signal_count = 0
-            self.tactile_stats_start_time = time.time()
 
     def stop_navigation(self):
         """Stop the navigation process"""
@@ -1127,8 +598,6 @@ class GuideNavNode:
             img = self._image_transform(img.astype(np.uint8)).unsqueeze(0)
         self.map_size = map_size
         self.topomap_images = topomap_images
-
-    import pandas as pd
 
     def load_trajectory_csv(self, csv_path):
         """

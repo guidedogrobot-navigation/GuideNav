@@ -35,15 +35,15 @@ def parse_args():
         "--img-dir",
         "-img",
         type=str,
-        help="path to offline data",
-        required=True,
+        default=None,
+        help="path to offline image data (required if --offline-images is set)",
     )
     parser.add_argument(
         "--gt-csv-path",
         "-gt",
         type=str,
-        help="path to gt pose",
-        required=True,
+        default=None,
+        help="path to ground truth pose CSV (optional, for evaluation only)",
     )
     # parser.add_argument(
     #     "--wp-model",
@@ -172,10 +172,9 @@ def parse_args():
     )
     parser.add_argument(
         "--vis-dir",
-        # default = "/media/2t/ijrr/experiment_viz",
-        default = "/home/orin2/Repository/GuideNav/src/experiment_viz",
+        default = "./visualization_results",
         type=Path,
-        help="path to topomap directory",
+        help="path to visualization output directory",
     )
     parser.add_argument(
         "--model-weight-dir",
@@ -187,10 +186,9 @@ def parse_args():
     # Feature matching
     parser.add_argument(
         "--feature-matching",
-        default= "reloc3r", # "mast3r", # "liftfeat", #"mast3r", # "mast3r",  
-        # default= "navdp", # "mast3r", # "liftfeat", #"mast3r", # "mast3r",  
+        default="reloc3r",
         type=str,
-        help="feature matching method to use (loftr | roma | mast3r | liftfeat)",
+        help="feature matching method to use (loftr | roma | mast3r | liftfeat | reloc3r)",
     )
 
     # debugging
@@ -213,47 +211,9 @@ def parse_args():
         help="offline image input fps (default: True)",
     )
 
-    parser.add_argument(
-        "--navdp-enabled",
-        action='store_true',
-        help="offline image input fps (default: True)",
-    )
-
     parser.add_argument('--use_odom', default=False, action='store_true',
                     help="Enable to use /visual_slam/tracking/odometry")
 
 
     args, _ = parser.parse_known_args()
     return args
-
-
-
-# def parse_topo_args():
-#     parser = argparse.ArgumentParser(
-#         description=f"Just for debugging purpose"
-#     )
-#     parser.add_argument(
-#         "--topomap-dir",
-#         "-d",
-#         type=str,
-#         help="name of the topomap directory",
-#         required=True,
-#     )
-#     parser.add_argument(
-#         "--topomap-base-dir",
-#         type=Path,
-#         help="path to topomap directory",
-#         required=True,
-#     )
-#     parser.add_argument(
-#         "--img-size",
-#         "-i",
-#         default=(85, 64),
-#         type=int,
-#         nargs=2,
-#         help="image size (default: [85, 64])",
-#     )
-#     args, _ = parser.parse_known_args()
-#     return args
-
-

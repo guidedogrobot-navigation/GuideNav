@@ -1,2 +1,0 @@
-#!/bin/bash
-python guidenav/navigate_ijrr_unified_saver_navdp.py     --robot mc  --robot-config-path ./config/robots.yaml   -d topo --topomap-base-dir /media/2t/ijrr/topo_fidelco_third_mine    --model-weight-dir model_weights   -img /media/2t/ijrr/raw_gail2library_20250706_233718/color   -gt /media/2t/ijrr/final/02_L2CSFAIL/observation/trajectory_2d.csv  --model-config-path config/models.yaml --use_odom False --vis-dir ./IJRR_02_L2CSFAIL --enable-debug True  --navdp_enabled False --feature-matching reloc3r

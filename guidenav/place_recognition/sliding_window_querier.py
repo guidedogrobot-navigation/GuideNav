@@ -1,10 +1,15 @@
+"""
+Sliding window filter for visual place recognition.
+
+Adapted from PlaceNav (https://github.com/lasuomela/PlaceNav) - MIT License
+"""
 import numpy as np
 
 from .gallery_db import PlaceRecognitionDBHandler
 
+
 class PlaceRecognitionSlidingWindowFilter:
-    '''
-    '''
+    """Sliding window filter for place recognition matching."""
     def __init__(
         self, extractor, gallery_db_path, img_dir_path
     ):

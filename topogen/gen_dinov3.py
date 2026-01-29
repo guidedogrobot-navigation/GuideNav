@@ -1,3 +1,9 @@
+"""
+DINOv3-based adaptive keyframe selection for topological map generation.
+
+Usage:
+    python gen_dinov3.py --input /path/to/images --output /path/to/output
+"""
 import os
 import cv2
 import torch
@@ -7,11 +13,23 @@ from sklearn.metrics.pairwise import cosine_similarity
 import torchvision.transforms as transforms
 from collections import deque
 import time
+import argparse
 
-# --- Configuration ---
-IMAGE_DIR = "/media/hochul/2TB/IJRR_Topomaps/topo_gail2library_1m"
-OUTPUT_DIR = "/media/hochul/2TB/IJRR_Topomaps/topo_gail2library_1m_topogen_adaptive"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+def parse_args():
+    parser = argparse.ArgumentParser(description="DINOv3 keyframe selection")
+    parser.add_argument("--input", "-i", type=str, required=True,
+                       help="Input image directory")
+    parser.add_argument("--output", "-o", type=str, required=True,
+                       help="Output directory for keyframes")
+    parser.add_argument("--method", "-m", type=str, default="multi_criteria",
+                       choices=["adaptive_threshold", "diversity_buffer",
+                               "temporal_spacing", "multi_criteria"],
+                       help="Keyframe selection method")
+    parser.add_argument("--dinov3-repo", type=str, default=None,
+                       help="Path to DINOv3 repository (if using local)")
+    parser.add_argument("--weights", type=str, default=None,
+                       help="Path to DINOv3 weights file")
+    return parser.parse_args()
 
 # === ADAPTIVE KEYFRAME SELECTION STRATEGIES ===
 
@@ -187,93 +205,107 @@ class AdaptiveKeyframeSelector:
 
 # === MAIN PROCESSING ===
 
-# Load DINOv3 model
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {device}")
+def main():
+    args = parse_args()
 
-# Load model (update REPO_DIR path as needed)
+    # Create output directory
+    os.makedirs(args.output, exist_ok=True)
 
-REPO_DIR = "/home/hochul/Repository/dinov3"  # Update this path
-model_name = "dinov3_vitl16"
-model = torch.hub.load(REPO_DIR, model_name, source='local', 
-                      weights='/home/hochul/Repository/GuideNav/src/topogen/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth')
-model.to(device)
-model.eval()
+    # Load DINOv3 model
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
 
-# Preprocessing
-preprocess = transforms.Compose([
-    transforms.Resize(256, interpolation=transforms.InterpolationMode.BICUBIC),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-])
+    # Preprocessing
+    preprocess = transforms.Compose([
+        transforms.Resize(256, interpolation=transforms.InterpolationMode.BICUBIC),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
 
-def extract_dinov3_feature(img_bgr):
-    """Extract DINOv3 features from BGR image"""
-    image = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
-    image_tensor = preprocess(image).unsqueeze(0).to(device)
-    
-    with torch.no_grad():
-        feat = model(image_tensor)
-    
-    feat = feat / feat.norm(dim=-1, keepdim=True)
-    return feat.cpu().numpy().squeeze()
+    # Load model
+    if args.dinov3_repo and args.weights:
+        model = torch.hub.load(args.dinov3_repo, "dinov3_vitl16", source='local',
+                              weights=args.weights)
+    else:
+        # Use pretrained from torch hub
+        model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
+    model.to(device)
+    model.eval()
 
-# Load images
-image_paths = sorted(
-    [os.path.join(IMAGE_DIR, f) for f in os.listdir(IMAGE_DIR) if f.endswith(".png")],
-    key=lambda x: int(os.path.basename(x).split(".")[0])
-)
+    def extract_dinov3_feature(img_bgr):
+        """Extract DINOv3 features from BGR image"""
+        image = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
+        image_tensor = preprocess(image).unsqueeze(0).to(device)
 
-print(f"Found {len(image_paths)} images")
+        with torch.no_grad():
+            feat = model(image_tensor)
 
-# Choose selection method
-selector = AdaptiveKeyframeSelector(method='multi_criteria')  # Recommended
+        feat = feat / feat.norm(dim=-1, keepdim=True)
+        return feat.cpu().numpy().squeeze()
 
-# Process all frames
-selected_keyframes = []
-start_time = time.time()
+    # Load images
+    extensions = ('.png', '.jpg', '.jpeg')
+    image_paths = sorted(
+        [os.path.join(args.input, f) for f in os.listdir(args.input)
+         if f.lower().endswith(extensions)],
+        key=lambda x: int(os.path.basename(x).split(".")[0])
+    )
 
-for i, img_path in enumerate(image_paths):
-    img = cv2.imread(img_path)
-    if img is None:
-        continue
-    
-    feat = extract_dinov3_feature(img)
-    
-    if selector.should_select_keyframe(feat, i):
-        save_path = os.path.join(OUTPUT_DIR, f"keyframe_{len(selected_keyframes):06d}.jpg")
-        cv2.imwrite(save_path, img)
-        selected_keyframes.append((i, img_path, save_path))
-        
-        print(f"Selected keyframe {len(selected_keyframes):3d}: frame {i:4d} -> {save_path}")
-    
-    # Progress update
-    if (i + 1) % 100 == 0:
-        elapsed = time.time() - start_time
-        fps = (i + 1) / elapsed
-        print(f"Processed {i+1}/{len(image_paths)} frames ({fps:.1f} fps), "
-              f"selected {len(selected_keyframes)} keyframes")
+    print(f"Found {len(image_paths)} images")
 
-# Final statistics
-total_time = time.time() - start_time
-reduction_ratio = len(selected_keyframes) / len(image_paths)
+    # Choose selection method
+    selector = AdaptiveKeyframeSelector(method=args.method)
 
-print(f"\n=== KEYFRAME SELECTION COMPLETE ===")
-print(f"Total frames processed: {len(image_paths)}")
-print(f"Keyframes selected: {len(selected_keyframes)}")
-print(f"Reduction ratio: {reduction_ratio:.1%} (kept {reduction_ratio:.1%} of frames)")
-print(f"Processing time: {total_time:.1f} seconds ({len(image_paths)/total_time:.1f} fps)")
-print(f"Output directory: {OUTPUT_DIR}")
+    # Process all frames
+    selected_keyframes = []
+    start_time = time.time()
 
-# Save selection log
-with open(os.path.join(OUTPUT_DIR, "selection_log.txt"), 'w') as f:
-    f.write("Keyframe Selection Log\n")
-    f.write("=====================\n")
-    f.write(f"Method: {selector.method}\n")
-    f.write(f"Total frames: {len(image_paths)}\n")
-    f.write(f"Selected keyframes: {len(selected_keyframes)}\n")
-    f.write(f"Reduction ratio: {reduction_ratio:.1%}\n")
-    f.write(f"\nSelected frames:\n")
-    for i, (frame_idx, orig_path, save_path) in enumerate(selected_keyframes):
-        f.write(f"{i:3d}: frame {frame_idx:4d} ({os.path.basename(orig_path)})\n")
+    for i, img_path in enumerate(image_paths):
+        img = cv2.imread(img_path)
+        if img is None:
+            continue
+
+        feat = extract_dinov3_feature(img)
+
+        if selector.should_select_keyframe(feat, i):
+            save_path = os.path.join(args.output, f"keyframe_{len(selected_keyframes):06d}.jpg")
+            cv2.imwrite(save_path, img)
+            selected_keyframes.append((i, img_path, save_path))
+
+            print(f"Selected keyframe {len(selected_keyframes):3d}: frame {i:4d} -> {save_path}")
+
+        # Progress update
+        if (i + 1) % 100 == 0:
+            elapsed = time.time() - start_time
+            fps = (i + 1) / elapsed
+            print(f"Processed {i+1}/{len(image_paths)} frames ({fps:.1f} fps), "
+                  f"selected {len(selected_keyframes)} keyframes")
+
+    # Final statistics
+    total_time = time.time() - start_time
+    reduction_ratio = len(selected_keyframes) / len(image_paths) if image_paths else 0
+
+    print(f"\n=== KEYFRAME SELECTION COMPLETE ===")
+    print(f"Total frames processed: {len(image_paths)}")
+    print(f"Keyframes selected: {len(selected_keyframes)}")
+    print(f"Reduction ratio: {reduction_ratio:.1%} (kept {reduction_ratio:.1%} of frames)")
+    if total_time > 0:
+        print(f"Processing time: {total_time:.1f} seconds ({len(image_paths)/total_time:.1f} fps)")
+    print(f"Output directory: {args.output}")
+
+    # Save selection log
+    with open(os.path.join(args.output, "selection_log.txt"), 'w') as f:
+        f.write("Keyframe Selection Log\n")
+        f.write("=====================\n")
+        f.write(f"Method: {selector.method}\n")
+        f.write(f"Total frames: {len(image_paths)}\n")
+        f.write(f"Selected keyframes: {len(selected_keyframes)}\n")
+        f.write(f"Reduction ratio: {reduction_ratio:.1%}\n")
+        f.write(f"\nSelected frames:\n")
+        for i, (frame_idx, orig_path, save_path) in enumerate(selected_keyframes):
+            f.write(f"{i:3d}: frame {frame_idx:4d} ({os.path.basename(orig_path)})\n")
+
+
+if __name__ == '__main__':
+    main()

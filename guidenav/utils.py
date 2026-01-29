@@ -15,38 +15,6 @@ import cv2
 from typing import List, Tuple
 import yaml
 
-# models
-# from guidenav.models.wp_models.gnm.gnm import GNM
-
-
-# def load_model(
-#     model_path: str,
-#     model_params: dict,
-#     device: torch.device = torch.device("cpu"),
-# ) -> nn.Module:
-#     """Load a model from a checkpoint file (works with models trained on multiple GPUs)"""
-#     checkpoint = torch.load(model_path, map_location=device)
-#     loaded_model = checkpoint["model"]
-
-#     if model_params["model_type"] == "gnm":
-#         model = GNM(
-#             model_params["context_size"],
-#             model_params["len_traj_pred"],
-#             model_params["learn_angle"],
-#             model_params["obs_encoding_size"],
-#             model_params["goal_encoding_size"],
-#         )
-#     else:
-#         raise ValueError(f"Invalid model type: {model_params['model_type']}")
-#     try:
-#         state_dict = loaded_model.module.state_dict()
-#         model.load_state_dict(state_dict)
-#     except AttributeError as e:
-#         state_dict = loaded_model.state_dict()
-#         model.load_state_dict(state_dict)
-#     model.to(device)
-#     return model
-
 
 def to_numpy(tensor):
     return tensor.cpu().detach().numpy()

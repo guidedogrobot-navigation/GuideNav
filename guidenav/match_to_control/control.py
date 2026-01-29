@@ -1,29 +1,5 @@
 import numpy as np
-# import pdbjjj
 
-# # controller
-# def pController(x_rel, y_rel, max_v, max_w, k_rho=0.8, k_alpha=1.0):
-#     """
-#     pose to vel
-#     Convert relative pose (x_rel, y_rel, yaw_rel_deg) to velocity commands.
-#     P controller
-#     """
-#     pdb.set_trace()  # Debugging breakpoint
-#     # Convert angle to radians
-#     alpha = np.arctan2(y_rel, x_rel)
-#     rho = np.hypot(x_rel, y_rel)  # distance to goal
-#     pdb.set_trace()  # Debugging breakpoint
-
-#     # Proportional control
-#     v = k_rho * rho
-#     w = k_alpha * alpha
-#     pdb.set_trace()  # Debugging breakpoint
-
-#     # Clamp to max speed
-#     v = np.clip(v, -max_v, max_v)
-#     w = np.clip(w, -max_w, max_w)
-
-#     return v, w
 
 def pController(x_rel, y_rel, yaw_rel,
                      max_v, max_w,

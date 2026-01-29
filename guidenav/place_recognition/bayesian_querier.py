@@ -1,3 +1,10 @@
+"""
+Bayesian topological filter for visual place recognition.
+
+This module is adapted from:
+- PlaceNav (https://github.com/lasuomela/PlaceNav) - MIT License
+- ProbFiltersVPR (https://github.com/mingu6/ProbFiltersVPR) - Original implementation
+"""
 import numpy as np
 import torch
 from typing import Tuple
@@ -6,9 +13,11 @@ from .gallery_db import PlaceRecognitionDBHandler
 
 
 class PlaceRecognitionTopologicalFilter:
-    '''
-    Adapted from https://github.com/mingu6/ProbFiltersVPR/blob/master/src/models/TopologicalFilter.py
-    '''
+    """
+    Bayesian topological filter for place recognition.
+
+    Adapted from PlaceNav and ProbFiltersVPR.
+    """
     def __init__(
         self, extractor, gallery_db_path, gallery_img_dir, delta=5, window_lower=-2, window_upper=10,
     ):        

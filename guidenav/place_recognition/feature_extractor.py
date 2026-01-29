@@ -1,9 +1,15 @@
+"""
+Feature extractor for visual place recognition.
+
+Adapted from PlaceNav (https://github.com/lasuomela/PlaceNav) - MIT License
+"""
 import torch
 from typing import Dict
 
 from guidenav import logger
 from guidenav.models import pr_models as models
 from guidenav.models.pr_models.base_model import dynamic_load
+
 
 class FeatureExtractor:
 

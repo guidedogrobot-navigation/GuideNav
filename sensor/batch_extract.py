@@ -1,8 +1,3 @@
-
-## python3 batch_processor.py /path/to/your/bags your_extractor_script.py
-# python3 batch_processor.py /media/2t/ijrr/bags_tactile_day1 your_script.py --continue-on-error
-
-
 #!/usr/bin/env python3
 """
 Batch processor for ROS2 bag data extraction.

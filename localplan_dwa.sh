@@ -1,2 +1,0 @@
-#!/bin/bash
-python guidenav/dwa.py     --robot mc  --robot-config-path ./config/robots.yaml   -d topomap --topomap-base-dir /media/2t/ijrr/iPhone_topo_frames    --model-weight-dir model_weights   -img /media/2t/ijrr/final/02_L2CSFAIL/observation/obs   -gt /media/2t/ijrr/final/02_L2CSFAIL/observation/trajectory_2d.csv  --model-config-path config/models.yaml --use_odom False --vis-dir ./IJRR_02_L2CSFAIL

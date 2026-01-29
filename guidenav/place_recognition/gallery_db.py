@@ -1,6 +1,12 @@
+"""
+Gallery database handler for place recognition.
+
+Adapted from PlaceNav (https://github.com/lasuomela/PlaceNav) - MIT License
+"""
 import h5py
 import numpy as np
 from pathlib import Path
+
 
 class PlaceRecognitionDBHandler:
 

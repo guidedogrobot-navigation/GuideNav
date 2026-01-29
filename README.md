@@ -1,125 +1,184 @@
-# GuideNav 🦮
-A visual teach-and-repeat system using topological mapping for autonomous robot navigation (RGB-only, untethered).
+# GuideNav: Visual Teach-and-Repeat Navigation using Topological Mapping
 
-## 🚀 Deployment
+<p align="center">
+  <a href="assets/teaser.mp4">
+    <img src="assets/teaser_thumbnail.png" alt="GuideNav Demo" width="800">
+  </a>
+</p>
 
-### 🔧 Hardware Requirements
-- **Jetson AGX Orin** - Main compute unit
-- **Laptop** - Data saving and code execution
+<!-- To embed video: drag-drop teaser.mp4 into GitHub issue/PR, then paste the generated link here -->
 
-### 🏃 Quick Start
-[Jetson Orin (ssh)]
+<p align="center">
+  <a href="https://arxiv.org/abs/2512.06147"><img src="https://img.shields.io/badge/arXiv-2512.06147-b31b1b.svg" alt="arXiv"></a>
+  <a href="https://guidedogrobot-navigation.github.io/"><img src="https://img.shields.io/badge/Project-Page-blue.svg" alt="Project Page"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+</p>
+
+This repository contains the official implementation of **GuideNav**, a visual teach-and-repeat navigation system that enables autonomous robot navigation using RGB images and topological mapping.
+
+## Overview
+
+GuideNav is an **RGB-only**, **untethered** visual navigation system designed for autonomous robot deployment. The system learns navigation routes from demonstration and can reliably repeat them using visual place recognition and relative pose estimation.
+
+### Key Features
+
+- **RGB-only Navigation**: No depth sensors or LiDAR required during deployment
+- **Topological Mapping**: Efficient sparse map representation using keyframes
+- **Place Recognition**: Robust localization using state-of-the-art visual place recognition models
+- **Real-time Performance**: Optimized for edge deployment on NVIDIA Jetson platforms
+- **Multiple Feature Matching Methods**: Support for LoFTR, RoMa, MAST3R, LiftFeat, and Reloc3r
+
+## Installation
+
+### Prerequisites
+
+- Ubuntu 20.04 / 22.04
+- Python 3.8+
+- CUDA 11.x or 12.x
+- ROS2 Humble (for robot deployment)
+
+### Setup
+
+1. Clone the repository:
 ```bash
-# Mount SSD
-mt2
-
-# Run navigation system (opens tmux w/ (1) camera streaming, (2) action command, (3) navigation script)
-navigate
-
-# Detach from session
-Ctrl+b, d
-```
-[Laptop]
-```bash
-# Connect to local WiFi
-outnavnet - daros123
-
-# Subscribe ROS2 Msgs for data saving (open terminal and make sure you have topomap in data saving PC)
-python3 save_data.py --topo_dir ~/Downloads/sampled_topo
-python save_data.py --topo_dir ~/Downloads/topo_gail2/topo_gail2parking_20250707_003014_3m_mine2
-```
-
-## Data Collection
-[Jetson Orin (ssh)]
-```bash
-# Mount SSD
-mt2
-
-# Setup Go2 Ros2
-tmuxx
-cd ~/go2_ws/install && source setup.bash
-ros2 launch go2_robot_sdk robot.launch.py
-
-# Setup camera
-doc
-cam
-
-# save w/ joint pos
-ros2 bag record -o raw_bag_$(date +%Y%m%d_%H%M%S)   /camera/color/image_raw   /camera/color/camera_info   /camera/aligned_depth_to_color/image_raw   /camera/aligned_depth_to_color/camera_info   /visual_slam/tracking/odometry  /tf   /tf_static /lowstate
-
-ros2 bag record -o raw_bag_$(date +%Y%m%d_%H%M%S)   /d435i/color/image_raw   /d435i/color/camera_info   /d435i/aligned_depth_to_color/image_raw   /d435i/aligned_depth_to_color/camera_info   /visual_slam/tracking/odometry  /tf   /tf_static /lowstate
-
-ros2 bag record -o tactile_$(date +%Y%m%d_%H%M%S)   /d435/color/image_raw   /d435/color/camera_info   /d435i/aligned_depth_to_color/image_raw  /d435i/color/image_raw   /d435i/color/camera_info  /d435i/aligned_depth_to_color/camera_info   /d435i/imu   /visual_slam/tracking/odometry   /tf   /tf_static
-
-# Detach from session
-Ctrl+b, d
-(mac) tmux -> new pane (ctrl+a+v) -> tmux detach-client
-
-# Tactile paving bag extraction
-orin2@orin2:~/Repository/GuideNav/src/sensor$ python batch_extract.py /media/2t/ijrr/bags_tactile_day1 extract_data_two.py
-
-# Tactile paving model TensorRT w/ quantization
-yolo export model=.pt format=engine int8=True
+git clone https://github.com/YOUR_USERNAME/GuideNav.git
+cd GuideNav
 ```
 
-
-
-## Data Visualization
-### Foxglove
-[Jetson Orin (ssh)]
+2. Create a conda environment:
 ```bash
-# Play ros2 bag and launch foxglove (need to source go2_ws/install.setup.bash for /lowstate topic)
-ros2 bag play raw_bag_XXXX
-ros2 launch foxglove_bridge foxglove_bridge_launch.xml
-```
-[Desktop]
-```bash
-# Foxglove UI (10.42.0.1)
+conda create -n guidenav python=3.10
+conda activate guidenav
 ```
 
-### Data Extract
+3. Install dependencies:
 ```bash
-cd ~/Repository/GuideNav/src/sensor
-python extract_data.py
-ros2 bag play raw_XXX
+pip install -r requirements.txt
 ```
 
-### Extracted Data Visualization
+4. Download model weights:
 ```bash
-cd /home/orin2/Repository/GuideNav/src/sensor
-python plot_dist_traj.py /media/2t/ijrr/20250701_095813/odom.csv --output northsquare_long.png --no-show
+# Place recognition models
+mkdir -p model_weights
+# Download CosPlace weights from: https://github.com/gmberton/CosPlace
+# Download feature matching weights as needed
 ```
 
-## Topomap construction (choose distance & yaw; default is 0.5m and 15 deg)
+## Usage
+
+### 1. Build a Topological Map (Teaching Phase)
+
+First, collect images along the desired route:
+
 ```bash
-cd /home/orin2/Repository/GuideNav/src/sensor
-sudo python build_topomap.py /media/2t/ijrr/20250701_052514 /media/2t/ijrr/topo_20250701_052514 --distance 1.0
+# Record RGB-D data with odometry
+python sensor/extract_data_two.py --output-dir ./data/teaching_run
+
+# Build topological map from recorded data
+python sensor/build_topomap.py ./data/teaching_run ./data/topomap --distance 1.0
 ```
 
+For adaptive keyframe selection using visual features:
+```bash
+python topogen/gen_dinov3.py --input ./data/raw_images --output ./data/topomap
+```
 
-## 📊 Features
+### 2. Extract Place Recognition Features
 
-- **🎯 RGB-only Navigation** - No additional sensors required
-- **🗺️ Topological Mapping** - Efficient map representation
-- **🔋 Untethered Operation** - Full autonomous deployment
-- **⚡ Real-time Processing** - Optimized for Jetson platform (perception)
+```bash
+# Features are automatically extracted on first navigation run
+# Or pre-compute them:
+python -m guidenav.place_recognition.extract_database --topomap-dir ./data/topomap
+```
 
+### 3. Navigation (Repeat Phase)
 
+For real-time navigation with ROS2:
+```bash
+python guidenav/navigate.py \
+    --robot mc \
+    --robot-config-path ./config/robots.yaml \
+    --topomap-base-dir ./data \
+    -d topomap \
+    --model-weight-dir ./model_weights \
+    --model-config-path ./config/models.yaml \
+    --feature-matching reloc3r
+```
 
-## 📁 (TODO) Clean Project Structure
+For offline testing with recorded images:
+```bash
+python guidenav/navigate.py \
+    --offline-images \
+    --img-dir ./data/test_run/color \
+    --topomap-base-dir ./data \
+    -d topomap \
+    --feature-matching reloc3r
+```
+
+## Configuration
+
+### Robot Configuration (`config/robots.yaml`)
+
+Configure robot-specific parameters including:
+- Maximum linear/angular velocities
+- Camera intrinsics
+- Control parameters
+
+### Model Configuration (`config/models.yaml`)
+
+Configure place recognition models:
+- CosPlace
+- SelAvPR
+
+## Project Structure
+
 ```
 GuideNav/
-├── src/
-│   ├── navigation/     # Core VTR algorithm
-│   ├── mapping/        # Topological map building
-│   └── vision/         # Perception methods
-└── data/              # Navigation data
+├── guidenav/               # Core navigation system
+│   ├── navigate.py         # Main navigation node
+│   ├── parser.py           # Argument parser
+│   ├── match_to_control/   # Feature matching and control
+│   │   ├── feature_match.py
+│   │   ├── control.py
+│   │   └── se2_estimate.py
+│   ├── models/             # Neural network models
+│   │   └── pr_models/      # Place recognition models
+│   └── place_recognition/  # VPR filtering modules
+├── sensor/                 # Data collection tools
+├── topogen/               # Topological map generation
+├── config/                # Configuration files
+└── model_weights/         # Model checkpoints (not included)
 ```
 
+## Citation
 
-## Acknowledgment
-We would like to express our gratitude to the authors and contributors of the following repositories:
+If you find this work useful, please cite our paper:
 
-- [PlaceNav](https://github.com/lasuomela/PlaceNav)
-- [visualnav-transformer](https://github.com/robodhruv/visualnav-transformer)
-- [CosPlace](https://github.com/gmberton/CosPlace)
+```bibtex
+@article{hwang2025guidenav,
+  title={GuideNav: User-Informed Development of a Vision-Only Robotic Navigation Assistant For Blind Travelers},
+  author={Hwang, Hochul and Yang, Soowan and Monon, Jahir Sadik and Giudice, Nicholas A and Lee, Sunghoon Ivan and Biswas, Joydeep and Kim, Donghyun},
+  journal={arXiv preprint arXiv:2512.06147},
+  year={2025}
+}
+```
+
+## Acknowledgments
+
+We would like to thank the authors and contributors of the following projects:
+
+- [PlaceNav](https://github.com/lasuomela/PlaceNav) - Bayesian filtering for visual navigation
+- [CosPlace](https://github.com/gmberton/CosPlace) - Visual place recognition
+- [visualnav-transformer](https://github.com/robodhruv/visualnav-transformer) - Visual navigation framework
+- [LoFTR](https://github.com/zju3dv/LoFTR) - Local feature matching
+- [RoMa](https://github.com/Parskatt/RoMa) - Robust dense feature matching
+- [MAST3R](https://github.com/naver/mast3r) - 3D reconstruction and matching
+- [Reloc3r](https://github.com/ffrivera0/reloc3r) - Relative pose estimation
+
+Parts of the place recognition filtering code are adapted from [PlaceNav](https://github.com/lasuomela/PlaceNav) (MIT License).
+
+Parts of the feature extraction code are adapted from [hloc](https://github.com/cvg/Hierarchical-Localization) by Paul-Edouard Sarlin et al. (Apache-2.0 License).
+
+## License
+
+This project is released under the MIT License. See [LICENSE](LICENSE) for details.

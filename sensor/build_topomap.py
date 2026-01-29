@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """
+THIS IS NAIVE TOPOMAP BUILDER - Original HRI'26 uses DINOv3 embeddings (/topogen/gen_dinov3.py)
 Keyframe extraction script for RGB-D data with odometry filtering.
 Extracts aligned keyframes based on movement thresholds.
-    >> python batch_extract.py /media/2t/ijrr/bags_tactile_day1 extract_data_two.py
+
+Usage:
+    python build_topomap.py /path/to/input /path/to/output --distance 1.0
 """
 
 import os

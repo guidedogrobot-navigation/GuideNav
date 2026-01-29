@@ -1,3 +1,9 @@
+"""
+ROS2 node for extracting synchronized RGB and depth images with odometry.
+
+Usage:
+    ros2 run guidenav extract_data_two --output-dir /path/to/save
+"""
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -6,15 +12,24 @@ import os
 import cv2
 from datetime import datetime
 import csv
+import argparse
 from nav_msgs.msg import Odometry
 
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Extract RGB-D data from ROS2 topics")
+    parser.add_argument("--output-dir", "-o", type=str, default="./data_output",
+                       help="Base output directory for extracted data")
+    return parser.parse_args()
+
+
 class SimpleImageSaver(Node):
-    def __init__(self):
+    def __init__(self, output_base_dir):
         super().__init__('simple_image_saver')
         self.bridge = CvBridge()
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.base_dir = os.path.join('/media/2t/ijrr/test_out', timestamp)
+        self.base_dir = os.path.join(output_base_dir, timestamp)
         
         # Create directories
         self.d435_color_dir = os.path.join(self.base_dir, 'd435_color')
@@ -141,10 +156,11 @@ class SimpleImageSaver(Node):
 
 
 def main():
+    args = parse_args()
     rclpy.init()
     node = None
     try:
-        node = SimpleImageSaver()
+        node = SimpleImageSaver(args.output_dir)
         node.get_logger().info("Simple ImageSaver node started.")
         rclpy.spin(node)
     except KeyboardInterrupt:
