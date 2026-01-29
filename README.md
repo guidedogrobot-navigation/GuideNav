@@ -34,7 +34,7 @@ GuideNav is an **RGB-only**, **untethered** visual navigation system designed fo
 
 ### Prerequisites
 
-- Ubuntu 20.04 / 22.04
+- Ubuntu 22.04
 - Python 3.8+
 - CUDA 11.x or 12.x
 - ROS2 Humble (for robot deployment)
@@ -107,16 +107,6 @@ python guidenav/navigate.py \
     --feature-matching reloc3r
 ```
 
-For offline testing with recorded images:
-```bash
-python guidenav/navigate.py \
-    --offline-images \
-    --img-dir ./data/test_run/color \
-    --topomap-base-dir ./data \
-    -d topomap \
-    --feature-matching reloc3r
-```
-
 ## Configuration
 
 ### Robot Configuration (`config/robots.yaml`)
@@ -126,11 +116,6 @@ Configure robot-specific parameters including:
 - Camera intrinsics
 - Control parameters
 
-### Model Configuration (`config/models.yaml`)
-
-Configure place recognition models:
-- CosPlace
-- SelAvPR
 
 ## Project Structure
 
@@ -151,6 +136,7 @@ GuideNav/
 ├── config/                # Configuration files
 └── model_weights/         # Model checkpoints (not included)
 ```
+
 
 ## Citation
 
