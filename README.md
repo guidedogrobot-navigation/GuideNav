@@ -1,4 +1,5 @@
-# GuideNav: Visual Teach-and-Repeat Navigation using Topological Mapping
+# GuideNav: User-Informed Development of a Vision-Only Robotic Navigation Assistant For Blind Travelers
+
 
   <div align="center">                                   
     <video src="https://github.com/user-attachments/asset
@@ -15,7 +16,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
 </p>
 
-This repository contains the official implementation of **GuideNav**, a visual teach-and-repeat navigation system that enables autonomous robot navigation using RGB images and topological mapping.
+This repository contains the official implementation of **GuideNav**, a vision-only teach-and-repeat navigation system that enables kilometer-scale route following in sidewalk environments.
 
 ## Overview
 
@@ -25,9 +26,9 @@ GuideNav is an **RGB-only**, **untethered** visual navigation system designed fo
 
 - **RGB-only Navigation**: No depth sensors or LiDAR required during deployment
 - **Topological Mapping**: Efficient sparse map representation using keyframes
-- **Place Recognition**: Robust localization using state-of-the-art visual place recognition models
+- **Place Recognition**: Robust localization using visual place recognition models
 - **Real-time Performance**: Optimized for edge deployment on NVIDIA Jetson platforms
-- **Multiple Feature Matching Methods**: Support for LoFTR, RoMa, MAST3R, LiftFeat, and Reloc3r
+- **Multiple Feature Matching Methods**: Support for LoFTR, RoMa, MAST3R, LiftFeat
 
 ## Installation
 
@@ -42,7 +43,7 @@ GuideNav is an **RGB-only**, **untethered** visual navigation system designed fo
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/YOUR_USERNAME/GuideNav.git
+git clone https://github.com/guidedogrobot-navigation/GuideNav.git
 cd GuideNav
 ```
 
@@ -75,7 +76,7 @@ First, collect images along the desired route:
 # Record RGB-D data with odometry
 python sensor/extract_data_two.py --output-dir ./data/teaching_run
 
-# Build topological map from recorded data
+# Build topological map from recorded data (using naive approach)
 python sensor/build_topomap.py ./data/teaching_run ./data/topomap --distance 1.0
 ```
 
@@ -87,7 +88,7 @@ python topogen/gen_dinov3.py --input ./data/raw_images --output ./data/topomap
 ### 2. Extract Place Recognition Features
 
 ```bash
-# Features are automatically extracted on first navigation run
+# Features are automatically extracted after the demonstration
 # Or pre-compute them:
 python -m guidenav.place_recognition.extract_database --topomap-dir ./data/topomap
 ```
@@ -164,21 +165,13 @@ If you find this work useful, please cite our paper:
 }
 ```
 
-## Acknowledgments
+## Acknowledgment
+We would like to express our gratitude to the authors and contributors of the following repositories:
 
-We would like to thank the authors and contributors of the following projects:
+- [PlaceNav](https://github.com/lasuomela/PlaceNav)
+- [visualnav-transformer](https://github.com/robodhruv/visualnav-transformer)
+- [CosPlace](https://github.com/gmberton/CosPlace)
 
-- [PlaceNav](https://github.com/lasuomela/PlaceNav) - Bayesian filtering for visual navigation
-- [CosPlace](https://github.com/gmberton/CosPlace) - Visual place recognition
-- [visualnav-transformer](https://github.com/robodhruv/visualnav-transformer) - Visual navigation framework
-- [LoFTR](https://github.com/zju3dv/LoFTR) - Local feature matching
-- [RoMa](https://github.com/Parskatt/RoMa) - Robust dense feature matching
-- [MAST3R](https://github.com/naver/mast3r) - 3D reconstruction and matching
-- [Reloc3r](https://github.com/ffrivera0/reloc3r) - Relative pose estimation
-
-Parts of the place recognition filtering code are adapted from [PlaceNav](https://github.com/lasuomela/PlaceNav) (MIT License).
-
-Parts of the feature extraction code are adapted from [hloc](https://github.com/cvg/Hierarchical-Localization) by Paul-Edouard Sarlin et al. (Apache-2.0 License).
 
 ## License
 
