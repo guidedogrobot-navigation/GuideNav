@@ -143,11 +143,12 @@ GuideNav/
 If you find this work useful, please cite our paper:
 
 ```bibtex
-@article{hwang2025guidenav,
-  title={GuideNav: User-Informed Development of a Vision-Only Robotic Navigation Assistant For Blind Travelers},
+@inproceedings{hwang2026guidenav,
+  title={Guidenav: User-informed development of a vision-only robotic navigation assistant for blind travelers},
   author={Hwang, Hochul and Yang, Soowan and Monon, Jahir Sadik and Giudice, Nicholas A and Lee, Sunghoon Ivan and Biswas, Joydeep and Kim, Donghyun},
-  journal={arXiv preprint arXiv:2512.06147},
-  year={2025}
+  booktitle={Proceedings of the 21st ACM/IEEE International Conference on Human-Robot Interaction},
+  pages={1129--1139},
+  year={2026}
 }
 ```
 
