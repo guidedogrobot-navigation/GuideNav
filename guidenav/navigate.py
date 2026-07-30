@@ -4,7 +4,6 @@ import time
 import yaml
 import copy
 import argparse
-import parser
 import glob
 
 import cv2
@@ -17,15 +16,22 @@ from pathlib import Path
 
 import torch
 
+# Allow running this file directly (`python guidenav/navigate.py`) as well as
+# via the package (`python -m guidenav.navigate`): the repository root must be
+# importable for the absolute `guidenav.*` imports below to resolve.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from guidenav import parser
+
 # Place recognition
-from place_recognition.bayesian_querier import PlaceRecognitionTopologicalFilter
-from place_recognition.sliding_window_querier import PlaceRecognitionSlidingWindowFilter
-from place_recognition.feature_extractor import FeatureExtractor
-from place_recognition import extract_database
+from guidenav.place_recognition.bayesian_querier import PlaceRecognitionTopologicalFilter
+from guidenav.place_recognition.sliding_window_querier import PlaceRecognitionSlidingWindowFilter
+from guidenav.place_recognition.feature_extractor import FeatureExtractor
+from guidenav.place_recognition import extract_database
 
 
 # feature matching for rel pose est.
-from match_to_control import feature_match, se2_estimate, control # estimate_pose_test
+from guidenav.match_to_control import feature_match, control
 
 # Go2 control
 import rclpy
@@ -42,7 +48,7 @@ from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import CompressedImage
 
 
-from utils import to_numpy, read_image, read_depth_image, get_image_transform
+from guidenav.utils import to_numpy, read_image, read_depth_image, get_image_transform
 matplotlib.use('Agg')  # Use non-interactive backend
 
 # smooth behavior
@@ -70,18 +76,42 @@ class FakeRGBDSubscriber(Node):
         self.get_logger().info(f'Loaded {len(self.rgb_paths)} RGB images and {len(self.depth_paths)} depth images')
     
     def _load_image_paths(self):
-        """Load RGB and depth image paths from directory"""
-        rgb_dir = os.path.join(self.image_directory, 'color')
-        depth_dir = os.path.join(self.image_directory, 'depth')
-        
-        if os.path.exists(rgb_dir):
-            self.rgb_paths = sorted(glob.glob(os.path.join(rgb_dir, '*')))
-            self.rgb_paths = [p for p in self.rgb_paths if p.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
-        
-        if os.path.exists(depth_dir):
-            self.depth_paths = sorted(glob.glob(os.path.join(depth_dir, '*')))
-            self.depth_paths = [p for p in self.depth_paths if p.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
-        
+        """Load RGB and depth image paths from directory.
+
+        --img-dir may point either at a directory that contains a 'color'
+        subfolder, or directly at the folder of RGB frames (e.g. .../frames
+        or .../color). Depth (optional) is looked up in a sibling 'depth'
+        folder. Frames are sorted numerically by any digits in the filename
+        so 'frame_000010.jpg' sorts after 'frame_000009.jpg'.
+        """
+        img_exts = ('.jpg', '.jpeg', '.png', '.bmp')
+
+        # Resolve RGB directory: prefer a 'color' subdir, else the dir itself.
+        color_subdir = os.path.join(self.image_directory, 'color')
+        if os.path.isdir(color_subdir):
+            rgb_dir = color_subdir
+            depth_dir = os.path.join(self.image_directory, 'depth')
+        else:
+            rgb_dir = self.image_directory
+            depth_dir = os.path.join(os.path.dirname(os.path.normpath(rgb_dir)), 'depth')
+
+        def _numeric_key(path):
+            stem = os.path.splitext(os.path.basename(path))[0]
+            digits = ''.join(ch for ch in stem if ch.isdigit())
+            return (0, int(digits)) if digits else (1, stem)
+
+        if os.path.isdir(rgb_dir):
+            self.rgb_paths = sorted(
+                [p for p in glob.glob(os.path.join(rgb_dir, '*'))
+                 if p.lower().endswith(img_exts)],
+                key=_numeric_key)
+
+        if os.path.isdir(depth_dir):
+            self.depth_paths = sorted(
+                [p for p in glob.glob(os.path.join(depth_dir, '*'))
+                 if p.lower().endswith(img_exts)],
+                key=_numeric_key)
+
 
     def start_streaming(self, loop=True):
         """Start streaming images from directory"""
@@ -258,12 +288,6 @@ class GuideNavNode:
             robot_configs = yaml.safe_load(f)
         self.robot_config = robot_configs[args.robot]
 
-        self.K = np.array([self.robot_config['fx'], 0, self.robot_config['cx'],
-                            0, self.robot_config['fy'], self.robot_config['cy'],
-                            0, 0, 1]).reshape(3, 3).astype(np.float32)
-
-        print(f"Camera intrinsic matrix K:\n{self.K}")
-
         # interpolation for smooth movements
         self.use_smoothing = getattr(args, 'use_smoothing', False)
 
@@ -288,20 +312,11 @@ class GuideNavNode:
             self.sm_max_dw = self.robot_config['max_w'] * 0.6
 
         # Init fm_model
-        if self.fm_method == 'loftr':
-            self.fm_model = feature_match.init_loftr()
-
-        elif self.fm_method == 'roma':
-           self.fm_model = feature_match.init_roma() 
-
-        elif self.fm_method == 'mast3r':
-           self.fm_model = feature_match.init_mast3r() 
-
-        elif self.fm_method == 'liftfeat':
-           self.fm_model = feature_match.init_liftFeat() 
-
-        elif self.fm_method == 'reloc3r':
-            self.fm_model, self.img_reso = feature_match.init_reloc3r()
+        if self.fm_method != 'reloc3r':
+            raise ValueError(
+                f"Unsupported --feature-matching '{self.fm_method}'; only "
+                f"'reloc3r' is supported.")
+        self.fm_model, self.img_reso = feature_match.init_reloc3r()
 
         # Initialize place recognition
         if args.subgoal_mode == 'place_recognition':
@@ -376,7 +391,8 @@ class GuideNavNode:
             # RGB image transform
             current_obs = self._image_transform(rgb_img).unsqueeze(0).to(self.device)
 
-            if depth_img.max() > 1000:  # likely in mm
+            # Depth is optional (reloc3r does not use it). Only rescale when present.
+            if depth_img is not None and depth_img.max() > 1000:  # likely in mm
                 depth_img = depth_img / 1000.0
 
             # Maintain context queue
@@ -422,7 +438,7 @@ class GuideNavNode:
 
 
     def navigate_one_step(self, rgb_img, depth_img, current_obs, odom_msg):
-        """Execute one navigation step using NavDP + Place Recognition"""
+        """Execute one navigation step: place recognition -> relative pose -> control"""
         try:
             start_time = time.time()
             
@@ -501,68 +517,39 @@ class GuideNavNode:
         sg_img = self.topomap_images[subgoal_idx]
         
         try:
-            if self.fm_method == 'reloc3r':
+            x, y, yaw = feature_match.matching_features_reloc3r_inv(
+                rgb_img, sg_img, self.fm_model, self.img_reso)
+
+            x, y, yaw = self.smooth_pose(x, y, yaw)
+
+            # Handle negative x (behind robot)
+            while x < 0:
+                subgoal_idx = subgoal_idx + 1
+                print(f"Subgoal from {subgoal_idx-1} to {subgoal_idx} due to negative x")
+                if subgoal_idx >= len(self.topomap_images):
+                    print(f"[WARNING] Subgoal index {subgoal_idx} exceeds topomap length. Stopping.")
+                    return 0.0, 0.0, 0.0, 0.0, 0.0
+
+                sg_img = self.topomap_images[subgoal_idx]
                 x, y, yaw = feature_match.matching_features_reloc3r_inv(
                     rgb_img, sg_img, self.fm_model, self.img_reso)
-                
-                x, y, yaw = self.smooth_pose(x, y, yaw)
-                
-                # Handle negative x (behind robot)
-                while x < 0:
-                    subgoal_idx = subgoal_idx + 1
-                    print(f"Subgoal from {subgoal_idx-1} to {subgoal_idx} due to negative x")
-                    if subgoal_idx >= len(self.topomap_images):
-                        print(f"[WARNING] Subgoal index {subgoal_idx} exceeds topomap length. Stopping.")
-                        return 0.0, 0.0, 0.0, 0.0, 0.0
-                    
-                    sg_img = self.topomap_images[subgoal_idx]
-                    x, y, yaw = feature_match.matching_features_reloc3r_inv(
-                        rgb_img, sg_img, self.fm_model, self.img_reso)
 
-                if x is None or y is None or yaw is None:
-                    print(f"[WARNING] Pose estimation failed for frame {self.frame_counter}")
-                    self.unvalidPnpCount += 1
-                    return 0.0, 0.0, 0.0, 0.0, 0.0
+            if x is None or y is None or yaw is None:
+                print(f"[WARNING] Pose estimation failed for frame {self.frame_counter}")
+                self.unvalidPnpCount += 1
+                return 0.0, 0.0, 0.0, 0.0, 0.0
 
-                # Generate control commands
-                v, w = control.vtr_controller(x, y, yaw, 
-                                            self.robot_config['max_v'], 
-                                            self.robot_config['max_w'])
-                
-                print(f"Control: v={v:.3f}, w={w:.3f}, pose=({x:.2f},{y:.2f},{yaw:.1f})")
-                return x,y,yaw, v, w
-                
-            else:
-                # Handle other feature matching methods
-                kp1, kp2, matches = self.do_feature_matching(rgb_img, sg_img)
-                x, y, yaw = se2_estimate.pnpRansac(kp1, kp2, matches, depth_img, self.K)
-                
-                if x is None or y is None or yaw is None:
-                    print(f"[WARNING] PnP failed for frame {self.frame_counter}")
-                    self.unvalidPnpCount += 1
-                    return 0.0, 0.0, 0.0, 0.0, 0.0
+            # Generate control commands
+            v, w = control.vtr_controller(x, y, yaw,
+                                        self.robot_config['max_v'],
+                                        self.robot_config['max_w'])
 
-                v, w = control.vtr_controller(x, y, yaw, 
-                                            self.robot_config['max_v'], 
-                                            self.robot_config['max_w'])
-                return x,y,yaw,v, w
-                
+            print(f"Control: v={v:.3f}, w={w:.3f}, pose=({x:.2f},{y:.2f},{yaw:.1f})")
+            return x, y, yaw, v, w
+
         except Exception as e:
             print(f"[ERROR] Feature matching failed: {e}")
             return 0.0, 0.0, 0.0, 0.0, 0.0
-
-    def do_feature_matching(self, rgb_img, sg_img):
-        """Helper function for feature matching"""
-        if self.fm_method == 'loftr':
-            return feature_match.matching_features_loftr(rgb_img, sg_img, self.fm_model)
-        elif self.fm_method == 'roma':
-            return feature_match.matching_features_roma(rgb_img, sg_img, self.fm_model)
-        elif self.fm_method == 'mast3r':
-            return feature_match.matching_features_mast3r(rgb_img, sg_img, self.fm_model)
-        elif self.fm_method == 'liftfeat':
-            return feature_match.matching_features_liftFeat(rgb_img, sg_img, self.fm_model)
-        else:
-            raise ValueError(f"Feature matching method {self.fm_method} not supported")
 
     def start_navigation(self):
         """Start the navigation process"""

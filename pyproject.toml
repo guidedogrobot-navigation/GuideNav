@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guidenav"
+version = "0.1.0"
+description = "Vision-only teach-and-repeat navigation for blind travelers"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+
+[tool.setuptools]
+# Only the guidenav package is installable; sensor/ and topogen/ are standalone
+# scripts run from the repository root.
+packages = [
+    "guidenav",
+    "guidenav.match_to_control",
+    "guidenav.models",
+    "guidenav.models.pr_models",
+    "guidenav.models.pr_models.cosplace_model",
+    "guidenav.place_recognition",
+]
+zip-safe = false

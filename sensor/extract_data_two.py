@@ -163,7 +163,9 @@ def main():
         node = SimpleImageSaver(args.output_dir)
         node.get_logger().info("Simple ImageSaver node started.")
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
+        # ExternalShutdownException: the process received a signal and rclpy
+        # already began tearing down the context.
         print("\nShutting down gracefully...")
     except Exception as e:
         print(f"Exception in main: {e}")
@@ -171,8 +173,12 @@ def main():
         traceback.print_exc()
     finally:
         if node is not None:
+            # destroy_node() closes the odometry CSV.
             node.destroy_node()
-        rclpy.shutdown()
+        # Only shut down if the context is still valid -- avoids the
+        # "rcl_shutdown already called" error on signal-driven exits.
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

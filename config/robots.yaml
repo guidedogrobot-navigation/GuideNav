@@ -10,12 +10,6 @@ mc:
   frame_rate: 5 # Hz
   camera_height: 0.35 # m
 
-  # Camera intrinsics
-  fx: 454.102
-  fy: 453.927
-  cx: 325.456
-  cy: 181.126
-
   # Robot dimensions
   size_width: 0.4 # m
   size_length: 0.7 # m

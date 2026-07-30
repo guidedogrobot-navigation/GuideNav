@@ -188,7 +188,7 @@ def parse_args():
         "--feature-matching",
         default="reloc3r",
         type=str,
-        help="feature matching method to use (loftr | roma | mast3r | liftfeat | reloc3r)",
+        help="relative pose estimation method (only 'reloc3r' is supported)",
     )
 
     # debugging

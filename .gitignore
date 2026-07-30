@@ -52,6 +52,20 @@ model_weights/**/*.ckpt
 !model_weights/.gitignore
 !model_weights/**/.gitignore
 
+# Torch hub cache (populated by reloc3r on first run)
+torch_hub_checkpoints/
+
+# Upstream feature-matching repos, cloned by the user.
+# See the README (Feature Matching Setup).
+guidenav/match_to_control/methods/*
+!guidenav/match_to_control/methods/.gitkeep
+
+# Debug output from debug/save_data.py
+debug_results/
+debug_results_*/
+*.mp4
+!assets/teaser.mp4
+
 # Logs
 *.log
 logs/

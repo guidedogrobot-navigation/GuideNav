@@ -196,3 +196,52 @@ def main(
 
     logger.info("Finished exporting features.")
     return feature_path
+
+
+def _cli():
+    """Pre-compute the place recognition database for a topomap directory.
+
+    Navigation does this automatically on first run; this entry point is for
+    building the database ahead of time.
+    """
+    import argparse
+    import yaml
+
+    from guidenav.utils import get_image_transform
+
+    ap = argparse.ArgumentParser(
+        description="Extract global descriptors from a topomap directory."
+    )
+    ap.add_argument("--topomap-dir", type=Path, required=True,
+                    help="directory containing the topomap images")
+    ap.add_argument("--model-config-path", type=Path, default=Path("config/models.yaml"),
+                    help="path to the place recognition model config (default: config/models.yaml)")
+    ap.add_argument("--model-weight-dir", type=Path, default=Path("model_weights"),
+                    help="directory holding model checkpoints (default: model_weights)")
+    ap.add_argument("--pr-model", default="cosplace",
+                    help="place recognition model name (default: cosplace)")
+    # Must match --img-size used at navigation time, or the precomputed
+    # descriptors will not be comparable to the query descriptors.
+    ap.add_argument("--img-size", type=int, nargs=2, default=(85, 64),
+                    help="image size as WIDTH HEIGHT (default: 85 64)")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="recompute descriptors even if the database exists")
+    args = ap.parse_args()
+
+    with args.model_config_path.open(mode="r", encoding="utf-8") as f:
+        conf = yaml.safe_load(f)[args.pr_model]
+    conf["model"]["checkpoint_path"] = args.model_weight_dir / conf["model"]["checkpoint_path"]
+
+    feature_path = main(
+        conf,
+        args.topomap_dir,
+        get_image_transform(list(args.img_size)),
+        args.topomap_dir,
+        as_half=False,
+        overwrite=args.overwrite,
+    )
+    print(f"Descriptors written to {feature_path}")
+
+
+if __name__ == "__main__":
+    _cli()

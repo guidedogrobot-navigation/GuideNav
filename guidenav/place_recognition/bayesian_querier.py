@@ -46,9 +46,13 @@ class PlaceRecognitionTopologicalFilter:
         TODO: Alternatively the initial belief 
               could be concentrated on the start node
         '''
-        # Distance between query descriptor and database descriptors
+        # Distance between query descriptor and database descriptors.
+        # Clamp the argument to >=0: for L2-normalized descriptors the dot
+        # product is <=1 in theory, but floating-point can yield 1.0000002,
+        # making 2-2*dot slightly negative and sqrt() return NaN. A single
+        # NaN poisons the whole belief distribution (argmax then sticks at 0).
         query_desc = self.extractor(img)['global_descriptor'].numpy().squeeze()
-        dists = np.sqrt(2 - 2 * np.dot(self.descriptors, query_desc))
+        dists = np.sqrt(np.clip(2 - 2 * np.dot(self.descriptors, query_desc), 0.0, None))
         
         # Init for lambda1
         descriptor_quantiles = np.quantile(dists, [0.025, 0.975])
@@ -62,8 +66,10 @@ class PlaceRecognitionTopologicalFilter:
 
     def obs_lhood(self, descriptor: np.ndarray) -> np.ndarray:
         '''Observation likelihood of the query descriptor'''
+        # clip to avoid sqrt of a tiny negative (fp error when dot ~ 1.0);
+        # a NaN here would corrupt the entire belief distribution.
         vsim = np.exp(
-            -self.lambda1 * np.sqrt(2 - 2 * np.dot(self.descriptors, descriptor))
+            -self.lambda1 * np.sqrt(np.clip(2 - 2 * np.dot(self.descriptors, descriptor), 0.0, None))
         )
         return vsim
 

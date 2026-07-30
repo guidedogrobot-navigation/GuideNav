@@ -223,12 +223,17 @@ def main():
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
-    # Load model
+    # Load model. DINOv3 (used in the paper) is not distributed via torch.hub,
+    # so it requires a local clone plus weights; otherwise fall back to DINOv2.
     if args.dinov3_repo and args.weights:
+        print("[INFO] Using DINOv3 (dinov3_vitl16) from "
+              f"{args.dinov3_repo} with weights {args.weights}")
         model = torch.hub.load(args.dinov3_repo, "dinov3_vitl16", source='local',
                               weights=args.weights)
     else:
-        # Use pretrained from torch hub
+        print("[WARNING] --dinov3-repo/--weights not given: falling back to "
+              "DINOv2 (dinov2_vitl14) from torch.hub. The paper uses DINOv3; "
+              "keyframe selection will differ.")
         model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
     model.to(device)
     model.eval()
