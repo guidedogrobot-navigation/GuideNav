@@ -1,4 +1,7 @@
 # GuideNav: User-Informed Development of a Vision-Only Robotic Navigation Assistant For Blind Travelers
+  <p align="center">
+    🏆 HRI 2026 Honorable Mention - Systems Track
+  </p>
 
 
   <div align="center">                                   
@@ -10,11 +13,17 @@
   
 <!-- To embed video: drag-drop teaser.mp4 into GitHub issue/PR, then paste the generated link here -->
 
-<p align="center">
-  <a href="https://arxiv.org/abs/2512.06147"><img src="https://img.shields.io/badge/arXiv-2512.06147-b31b1b.svg" alt="arXiv"></a>
-  <a href="https://guidedogrobot-navigation.github.io/"><img src="https://img.shields.io/badge/Project-Page-blue.svg" alt="Project Page"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
-</p>
+  <p align="center">
+    <a href="https://humanrobotinteraction.org/2026/award-nominees/"><img src="https://img.shields.io/badge/HRI%202026-Honorable%20Mention%20-FFD700" alt="HRI 2026 Honorable Mention"></a>
+    <a href="https://arxiv.org/abs/2512.06147"><img src="https://img.shields.io/badge/arXiv-2512.06147-b31b1b.svg" alt="arXiv"></a>
+    <a href="https://guidedogrobot-navigation.github.io/"><img src="https://img.shields.io/badge/Project-Page-blue.svg" alt="Project Page"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+  </p>
+
+
+  
+
+
 
 Official implementation of **GuideNav**, a vision-only teach-and-repeat navigation system for
 kilometer-scale route following in sidewalk environments.
@@ -70,19 +79,17 @@ of the patch file by hand. reloc3r's CUDA RoPE kernel is optional — without it
 `Warning, cannot find cuda-compiled version of RoPE2D, using a slow pytorch version instead`,
 and navigation still works.
 
+
 ### Model weights
 
-```bash
-# CosPlace place recognition, from PlaceNav (18,952,687 bytes; filename must not change --
-# it is set by checkpoint_path in config/models.yaml)
-mkdir -p model_weights
-curl -L -o model_weights/efficientnet_85x85.pth \
-  "https://drive.usercontent.google.com/download?id=1M1rvlRYiV9F0VHKggAOyzun4PwGFTlZ1&export=download"
-```
+Download the CosPlace place-recognition checkpoint (from [PlaceNav](https://github.com/asterix24/PlaceNav)) from Google Drive: **[efficientnet_85x85.pth](https://drive.google.com/file/d/1M1rvlRYiV9F0VHKggAOyzun4PwGFTlZ1/view)** 
 
-reloc3r downloads its own weights (`siyan824/reloc3r-512`, ~1.4 GB) from Hugging Face on first
-use. This can take a long time and shows no progress bar when stdout is redirected — it is not
-hung.
+Place it at `model_weights/efficientnet_85x85.pth` in the repo root:
+
+```
+model_weights/
+└── efficientnet_85x85.pth
+```
 
 ## Quickstart: offline evaluation
 
